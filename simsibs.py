@@ -181,12 +181,12 @@ def create_individual(community, n):
     return new_indiv
 
 def update_community(community, num_children, ncontinue, ninit):
-    new_indiv = create_individual(community, ninit)
+    new_indiv = create_individual(community, ninit) # Birth new child
     for i, child in enumerate(reversed(community.individuals)):
-        if i < num_children:
-            inputseq = community.get_input(ncontinue)
+        if i < num_children: # Update the children in ascending order of age
+            inputseq = community.get_input(ncontinue) 
             child.process_input(inputseq)
-    community.individuals.append(new_indiv)
+    community.individuals.append(new_indiv) # Update the population
     community.individuals = community.individuals[1:]
 
 def print_learner(community, indices, names):
@@ -197,9 +197,8 @@ def print_learner(community, indices, names):
         print(name, len(variants)-variants.count(-1)-variants.count(IRRELEVANT), variants.count(0), variants.count(1), [var for var in variants if var != IRRELEVANT])
 
 def iterate(community, num_iters, num_children, ninit, ncontinue):
-
     for i in range(0,num_iters):
-        update_community(community, 3, 500, 1000)
+        update_community(community, num_children, ninit, ncontinue)
 
     index = -1
     variants_mature = community.individuals[0-num_children-1].variants
@@ -214,37 +213,6 @@ def write_csv(f, data):
 #
 # Analysis functions
 #
-
-def freq_analysis(results, sample_indiv, num_iters):
-    tokenfreqs_by_lemma = {}
-    variants_by_lemma = {}
-    finalstates_by_lemma = {}
-    analyzedlemmas = []
-    for community in results:
-        for i, individual in enumerate(community.individuals):
-            for lemma, variants in individual.inputvariants.items():
-                if lemma not in tokenfreqs_by_lemma:
-                    tokenfreqs_by_lemma[lemma] = 0
-                    variants_by_lemma[lemma] = []
-                    finalstates_by_lemma[lemma] = []
-                if i == sample_indiv: #only the last developing
-                    tokenfreqs_by_lemma[lemma] += len(variants)
-                    variants_by_lemma[lemma].append(int(round(sum(variants),0)/len(variants)))
-    rank = 0
-    prevfreq = 999999999
-    for lemma, tokenfreq in sorted(tokenfreqs_by_lemma.items(),  key=lambda x: x[1], reverse=True):
-        init_variant = "FALSE"
-        denom = len(variants_by_lemma[lemma])
-        if not denom:
-            denom = 1
-        if lemma in community.init_variants:
-            init_variant = "TRUE"
-        analyzedlemmas.append((community.interactionfunc.__name__,len(community.init_variants), community.lemmas.N, init_variant, lemma, rank, tokenfreq/num_iters, variants_by_lemma[lemma].count(1)/denom))
-        if prevfreq > tokenfreq:
-            rank += 1
-        prevfreq = tokenfreq
-    return analyzedlemmas
-
 
 def freq_analysis_randomvariant(results, sample_indiv, num_iters):
     tokenfreqs_by_lemma = {}
@@ -296,15 +264,15 @@ def freq_analysis_randomvariant(results, sample_indiv, num_iters):
 
 def worker(seed, spent_communities, lemmas, num_lemmas, comm_size, num_children, ninit, ncontinue, relevants, irregnum, num_trials, num_iters, gen_interactionfunc):
     random.seed(seed)
-    initvars = gen_init_variants_uniformrandom(int(irregnum), relevants)
-    community = Community(comm_size, lemmas, initvars, gen_interactionfunc)
-    spent_communities.append(iterate(community, num_iters=num_iters, num_children=num_children, ninit=ninit, ncontinue=ncontinue))
+    initvars = gen_init_variants_uniformrandom(int(irregnum), relevants) # Irregulars are initially randomsly distributed
+    community = Community(comm_size, lemmas, initvars, gen_interactionfunc) # Creats a community according to the relevant parameters
+    spent_communities.append(iterate(community, num_iters=num_iters, num_children=num_children, ninit=ninit, ncontinue=ncontinue)) # iterates and returns community's final state for analysis
 
 def run_experiment_multiproc(num_lemmas, comm_size, num_children, ninit, ncontinue, relevants, irregnum, num_trials, num_iters, gen_interactionfunc):
     lemmas = Lemmas(num_lemmas,relevants)
     manager = Manager()
     spent_communities = manager.list([])
-    maxp = 10
+    maxp = 10 # NUMBER OF PROCESSES TO RUN IN PARALLEL
     completed = 0
     print("Trial:", end=" ")
     while completed < num_trials:
@@ -326,43 +294,47 @@ def run_experiment_multiproc(num_lemmas, comm_size, num_children, ninit, ncontin
 #
 
 def exps_basicrandom():
-    numlemmas = 100
-    comm_size = 100
-    num_children = 3
-    num_iters = comm_size + num_children
-    ninit = numlemmas*10
-    ncontinue = numlemmas*100
-    num_trials = 500
+    numlemmas = 100 # Lexicon size
+    comm_size = 100 # Community size
+    num_children = 3 # Number of learners
+    num_iters = comm_size + num_children # Number of itterations
+    ninit = 500 # Number of interactions for a child's first iteration
+    ncontinue = 1000 # Number of interactions for all subsequent iterations
+    num_trials = 500 # number of Trials
 
-    irregnums = [10,20]
-    interactions = [gen_uniformlist,gen_reversezipflist,gen_reverseinverselist]
-    relevants = gen_relevants_basic(1, numlemmas)
+    irregnums = [10,20] # Initial number of irregulars
+    interactions = [gen_uniformlist,gen_reversezipflist,gen_reverseinverselist] # Interaction distributions
+
+    relevants = gen_relevants_basic(1, numlemmas) # All items in the lexicon are relevant
     with open("exps_basicrandom.csv", "w") as f:
         f.write("interaction,ratio,paradigm_size,init_variant,lemma,tokenrank,tokenfreq,variant_rate,init_variant_rate,noninit_variant_rate\n")
         for interaction in interactions:
             for irregnum in irregnums:
-                init_variants = gen_init_variants_uniformrandom(int(irregnum), relevants)
+                init_variants = gen_init_variants_uniformrandom(int(irregnum), relevants) # Irregulars are initially distributed uniformly
                 print(len(relevants), len(init_variants))
                 relevants = set(relevants)
+
+                # Run the experiment for the set number of trials
                 results = run_experiment_multiproc(numlemmas, comm_size, num_children, ninit, ncontinue, relevants, irregnum, num_trials, num_iters, interaction)
+                # Get and write out summary results for analysis
                 analyzedlemmas = freq_analysis_randomvariant(results, comm_size-num_children-1, num_iters)
                 write_csv(f, analyzedlemmas)
 
 
 
-def exps_ipscons():
-    interactions = [gen_reverseinverselist,gen_uniformlist,gen_reversezipflist]
-    numlemmas = 100
-    comm_size = 100
-    num_children = 3
-    num_iters = comm_size + num_children
-    ninit = numlemmas*10
-    ncontinue = numlemmas*100
-    num_trials = 500
+def exps_icscons():
+    numlemmas = 100 # Lexicon size
+    comm_size = 100 # Community size
+    num_children = 3 # Number of learners
+    num_iters = comm_size + num_children # Number of itterations
+    ninit = 500 # Number of interactions for a child's first iteration
+    ncontinue = 1000 # Number of interactions for all subsequent iterations
+    num_trials = 500 # number of Trials
 
-    numlemmass = [10,20,30,40,50,60,70,80,90,100]
+    numlemmass = [10,20,30,40,50,60,70,80,90,100] # Lexicon sizes
+    interactions = [gen_reverseinverselist,gen_uniformlist,gen_reversezipflist] # Iteraction distributions
 
-    with open("exps_ipscons.csv", "w") as f:
+    with open("exps_icscons.csv", "w") as f:
         f.write("interaction,ratio,paradigm_size,init_variant,lemma,tokenrank,tokenfreq,variant_rate,init_variant_rate,noninit_variant_rate\n")
         for interaction in interactions:
             print(interaction)
@@ -374,7 +346,7 @@ def exps_ipscons():
                 irregnums = [0.9*theta]
                 for irregnum in irregnums:
                     print("NUM IRREGS", irregnum)
-                    relevants = gen_relevants_basic(1, numlemmas)
+                    relevants = gen_relevants_basic(1, numlemmas) # All paradigm items are relevant
 
                     relevants = set(relevants)
                     results = run_experiment_multiproc(numlemmas, comm_size, num_children, ninit, ncontinue, relevants, irregnum, num_trials, num_iters, interaction)
@@ -385,8 +357,10 @@ def exps_ipscons():
          
 
 def main():
+    # Lemma Frequency vs Regularization
     exps_basicrandom()
-    exps_ipscons()
+    # Paradigm Size vs Regularization
+    exps_icscons()
     
 if __name__=="__main__":
     main()
